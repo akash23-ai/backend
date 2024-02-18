@@ -9,7 +9,7 @@ const connectDB = async() => {
 
      
     } catch (error) {
-        console.log(`ERROR CONNECTION Failed`, error);
+        console.log(`ERROR CONNECTION`, error);
         process.exit(1);  //  In Node js Reference of the running process
     }
 }

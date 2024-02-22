@@ -28,4 +28,24 @@ app.use(express.static("public"));
 app.use(cookieParser())
 
 
+
+
+
+// routes import 
+
+import userRouter from './routes/user.routes.js'
+
+
+
+// routes declaration
+
+// this is syntax
+
+app.use("/api/v1/users", userRouter)
+
+// when somebody writes /users the control will go to userRouter
+
+
+
+
 export { app }

@@ -17,3 +17,5 @@ let res = new ApiResponse(
 )
 
 console.log(res)
+
+export {ApiResponse}

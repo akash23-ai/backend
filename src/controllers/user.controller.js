@@ -3,6 +3,28 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.models.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import jwt from "jsonwebtoken";
+
+// Because we will gonna do this work again and again so we are making a function for access and Refresh Token
+
+// we are not using async handler because it is a internal request
+const generateAccessAndRefreshTokens = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    const accessToken = await user.generateAccessToken();
+    const refreshToken = await user.generateRefreshToken();
+    user.refreshToken = refreshToken;
+    // i need to user validateBeforeSave false because other wise it will check for required field also
+    await user.save({ validateBeforeSave: false });
+
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new ApiError(
+      500,
+      "Something went wrong while generating Refresh and Access Token"
+    );
+  }
+};
 
 export const registerUser = asyncHandler(async (req, res) => {
   // check if the user exits
@@ -50,10 +72,13 @@ export const registerUser = asyncHandler(async (req, res) => {
 
   //const coverImageLocalPath = req.files?.coverImage[0]?.path;
 
-
   let coverImageLocalPath;
-  if(req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0){
-    coverImageLocalPath =  req.files.coverImage[0].path;
+  if (
+    req.files &&
+    Array.isArray(req.files.coverImage) &&
+    req.files.coverImage.length > 0
+  ) {
+    coverImageLocalPath = req.files.coverImage[0].path;
   }
 
   if (!avatarLocalPath) {
@@ -62,65 +87,202 @@ export const registerUser = asyncHandler(async (req, res) => {
 
   const avatar = await uploadOnCloudinary(avatarLocalPath);
   const coverImage = await uploadOnCloudinary(coverImageLocalPath);
-  
 
-  if(!avatar){
-    return new ApiError(400, "Avatar is Required")
+  if (!avatar) {
+    return new ApiError(400, "Avatar is Required");
   }
-  
 
   // create the user in the database takes a object
   // if cover image is there then upload if not then make it ""
-   const user = await User.create({
-      fullName,
-      avatar : avatar.url,
-      username : username.toLowerCase(),
-      email,
-      coverImage : coverImage?.url || "",
-      password,
-  })
+  const user = await User.create({
+    fullName,
+    avatar: avatar.url,
+    username: username.toLowerCase(),
+    email,
+    coverImage: coverImage?.url || "",
+    password,
+  });
 
   // This i have done in usermodel.js
 
-//   user.save();
+  //   user.save();
 
-   // in select every field is selected so to remove we use this syntax
+  // in select every field is selected so to remove we use this syntax
   const createdUser = await User.findById(user._id).select(
     "-password -refreshToken"
-  )
+  );
 
-  if(!createdUser){
-    return new ApiError(500, "SomeThing went wrong while registering user")
+  if (!createdUser) {
+    return new ApiError(500, "SomeThing went wrong while registering user");
   }
 
-
-  return res.status(201).json(
-    new ApiResponse(200, createdUser, "User registered Successfully")
-  )
-
-
-
+  return res
+    .status(201)
+    .json(new ApiResponse(200, createdUser, "User registered Successfully"));
 });
 
 // error req, res , next
 
-
-export const loginUser = asyncHandler(async (req, res) => { 
+export const loginUser = asyncHandler(async (req, res) => {
   // username based or email based
   // Check if user exits
   // password validation
   // then return with response
   // send cookies -> refresh and access
 
-  const {username, email, password} = req.body();
+  const { username, email, password } = req.body;
+  console.log(email);
 
-  if(!username || !email){
-    throw new ApiError(400, "Username or email is required")
+  if (!username && !email) {
+    throw new ApiError(400, "Username or email is required");
+  }
+  // for finding only with username pr email
+  // const isUserExist = await User.findOne({username});
+
+  // for finding any one of email or username
+  const user = await User.findOne({
+    $or: [{ username }, { email }],
+  });
+
+  if (!user) {
+    throw new ApiError(404, "User Not Found");
   }
 
-   const isUserExist = await User.findOne({username});
+  // The methods that we have created are present in the user that we have created not the User of mongoose
 
-   if(!isUserExist){
-    return new ApiError(404, "User Not Found")
-   }
-}) 
+  const isPasswordValid = await user.isPasswordCorrect(password);
+
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Password is Wrong");
+  }
+
+  const { refreshToken, accessToken } = await generateAccessAndRefreshTokens(
+    user._id
+  );
+
+  // can make another database call or can update the current users field
+
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+
+  // send this in cookies
+  // for sending cookie i need to design some option object
+
+  // httpOnly make the cokkie only modifiable from server not from frontend
+  // By deafault they are modifiable from both frontend and server
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiResponse(
+        200,
+        {
+          user: loggedInUser,
+          accessToken,
+          refreshToken,
+        },
+        "User logged In Successfully"
+      )
+    );
+});
+
+// can access cookie in req, res both
+
+export const logoutUser = asyncHandler(async (req, res) => {
+  // clear the cookies
+  // remove the refresh Token
+
+  const id = req.user._id;
+  // these functions came from mongoose
+  const user = await User.findByIdAndUpdate(
+    id,
+    {
+      // $set: {
+      //   refreshToken: undefined,  // this will not remove the field
+
+      // },
+
+      $unset: {
+        refreshToken: 1, // this will remove the field
+      },
+    },
+    {
+      new: true,
+    }
+  );
+
+  console.log(user);
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new ApiResponse(200, {}, "User logged Out SuccessFully"));
+
+  // To handle how to find user we will use middleware
+});
+
+export const refreshAccessToken = asyncHandler(async (req, res) => {
+  // can access the refresh token from the cookie of the request
+  // need to check if the token is same as in database
+  const incomingRefreshToken = req.cookie.refreshToken || req.body.refreshToken;
+
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "UnAthorized Request");
+  }
+
+  try {
+    // Why because the token that user got is a encrypted token that is diffrent from the database token
+    const decodedToken = jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+
+    const user = await User.findById(decodedToken?._id);
+
+    if (!user) {
+      throw new ApiError(401, "Invalid refresh Token");
+    }
+
+    if (user?.refreshToken !== incomingRefreshToken) {
+      throw new ApiError(401, "Refresh Token is Invalid");
+    }
+
+    const { accessToken, newRefreshToken } =
+      await user.generateAccessAndRefreshTokens(user._id);
+
+    const options = {
+      httpOnly: true,
+      secure: true,
+    };
+
+    return res
+      .status(200)
+      .cookie("accessToken", accessToken, options)
+      .cookie("refreshToken", newRefreshToken, options)
+      .json(
+        new ApiResponse(
+          200,
+          {
+            accessToken,
+            newRefreshToken,
+          },
+          "AccessToken is Refreshed"
+        )
+      );
+  } catch (error) {
+    throw new ApiError(401, error?.message || "Invalid Refresh Token")
+  }
+});

@@ -13,7 +13,7 @@ class ApiResponse {
 
 
 let res = new ApiResponse(
-    500,"whatsUp0"
+    500,"whatsUp"
 )
 
 console.log(res)

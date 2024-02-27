@@ -3,7 +3,10 @@ import jwt from "jsonwebtoken"
 import bcrypt from "bcryptjs"
 
 
-const userSchema = mongoose.Schema(
+//Both are valid and returns a new instance of the Mongoose.Schema class. What 
+//this means is that both does exactly the same.
+
+const userSchema = new mongoose.Schema(
     {
         watchHistory : [{
             type : mongoose.Schema.Types.ObjectId,

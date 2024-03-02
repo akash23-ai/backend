@@ -37,12 +37,13 @@ const deleteFromCloudinary = async (clodinaryFilePath) => {
     const fileWithExtension = fileArray[fileArray.length - 1];
     const publicIdArray = fileWithExtension.split(".");
     const publicId = publicIdArray[0];
-    console.log(publicId);
-    const response = await cloudinary.uploader.destroy(`image/upload/${publicId}`, {
-      resource_type: "auto",
+
+
+    const response = await cloudinary.uploader.destroy(publicId, {
+      resource_type: "image",
+      type : "upload"
     });
 
-    console.log(response);
     return response;
   } catch (error) {
     fs.unlinkSync(clodinaryFilePath);

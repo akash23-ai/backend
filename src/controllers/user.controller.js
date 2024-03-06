@@ -302,6 +302,7 @@ export const changeCurrentPassword = asyncHandler(async (req, res) => {
 
   user.password = newPassword;
 
+  // it will not ask for all the fields by using validateBeforeSave
   await user.save({ validateBeforeSave: false });
 
   return res
@@ -495,6 +496,10 @@ export const getUserChannelProfile = asyncHandler(async(req, res) => {
   return res.status(200).json(new ApiResponse(200, channel[0], "User Channel fetched successfully"))
 
 })
+
+
+
+// Need to watch the last section of part 2
 
 
 
